@@ -1,7 +1,13 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { reportLabel } from "./src/herdr.ts";
 import { labelFromPrompt } from "./src/label.ts";
-import { DEFAULT_STATE, ENTRY_TYPE, type LabelState, restoreState } from "./src/state.ts";
+import {
+  DEFAULT_STATE,
+  ENTRY_TYPE,
+  type LabelState,
+  latestUserPrompt,
+  restoreState,
+} from "./src/state.ts";
 
 export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   let state: LabelState = { ...DEFAULT_STATE };
@@ -18,7 +24,9 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
     state = restoreState(ctx);
     if (!state.label) {
       const sessionName = pi.getSessionName();
-      if (sessionName) state = { label: sessionName, automatic: true };
+      const promptLabel = labelFromPrompt(latestUserPrompt(ctx) ?? "");
+      const label = sessionName || promptLabel;
+      if (label) state = { label, automatic: true };
     }
     publish();
   };

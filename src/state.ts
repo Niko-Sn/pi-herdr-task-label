@@ -16,6 +16,31 @@ export function isLabelState(value: unknown): value is LabelState {
     typeof candidate.automatic === "boolean";
 }
 
+export function latestUserPrompt(ctx: ExtensionContext): string | null {
+  const entries = ctx.sessionManager.getBranch() as unknown[];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index] as {
+      type?: string;
+      message?: { role?: string; content?: unknown };
+    };
+    if (entry?.type !== "message" || entry.message?.role !== "user") continue;
+    const content = entry.message.content;
+    if (typeof content === "string" && content.trim()) return content;
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((part): part is { type: "text"; text: string } =>
+          !!part && typeof part === "object" &&
+          (part as { type?: unknown }).type === "text" &&
+          typeof (part as { text?: unknown }).text === "string")
+        .map((part) => part.text)
+        .join(" ")
+        .trim();
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
 export function restoreState(ctx: ExtensionContext): LabelState {
   const entries = ctx.sessionManager.getBranch();
   for (let index = entries.length - 1; index >= 0; index -= 1) {

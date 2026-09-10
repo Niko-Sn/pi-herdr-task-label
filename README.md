@@ -13,7 +13,7 @@ substantive prompt can become the session label. Short acknowledgements such as
 - Reports a display-only `$session_task` token to the current Herdr pane
 - Derives concise labels locally without an extra model request
 - Persists labels across Pi reloads, resumes, forks, and tree navigation
-- Uses Pi session names as an initial label when available
+- Restores an initial label from the Pi session name or latest user prompt
 - Supports manual labels and returning to automatic mode
 - Coexists with Herdr's official managed Pi integration and `pi-todo-herdr`
 - Clears its token when Pi quits
@@ -52,8 +52,8 @@ agent_panel_sort = "priority"
 
 [ui.sidebar.agents.rows_by_agent]
 pi = [
-  ["state_icon", "$session_task"],
-  ["agent", "state_text"],
+  ["state_icon", "agent"],
+  ["$session_task"],
 ]
 ```
 
