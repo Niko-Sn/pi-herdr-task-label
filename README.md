@@ -1,7 +1,7 @@
 # pi-herdr-task-label
 
-A private Pi extension that shows the latest user prompt and an agent-written task
-title on separate rows in Herdr. It does not require a task tree and coexists with
+A Pi extension that shows the latest user prompt and an agent-written task title
+on separate rows in Herdr. It does not require a task tree and coexists with
 Herdr's managed Pi integration and `pi-todo-herdr`.
 
 ## Agent layout
@@ -33,10 +33,16 @@ begins or the objective materially changes.
 
 ## Install
 
-While the repository is private:
+From npm:
 
 ```bash
-pi install git:git@github.com:Niko-Sn/pi-herdr-task-label.git
+pi install npm:pi-herdr-task-label
+```
+
+From GitHub:
+
+```bash
+pi install git:github.com/Niko-Sn/pi-herdr-task-label
 ```
 
 For local development:
@@ -151,8 +157,6 @@ the local Pi and Herdr processes.
 npm install
 npm run check
 ```
-
-The package remains marked `private` in `package.json`.
 
 ## License
 
