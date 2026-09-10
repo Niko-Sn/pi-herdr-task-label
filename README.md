@@ -45,7 +45,19 @@ Run `/reload` in an existing Pi session after installation.
 
 ## Configure Herdr
 
-Configure three Pi agent rows in `~/.config/herdr/config.toml`:
+Run the interactive setup command:
+
+```text
+/herdr-label-setup
+```
+
+Pi shows the target configuration path and requires explicit confirmation before
+writing. Setup changes only the `rows_by_agent.pi` assignment, preserves unrelated
+TOML text, creates a timestamped backup, writes atomically, validates with
+`herdr config check`, restores the original on failure, and reloads the server.
+Press `Ctrl+B`, then `Shift+R` in Herdr afterward to reload the client UI.
+
+The command installs this layout:
 
 ```toml
 [ui]
@@ -60,12 +72,8 @@ pi = [
 ]
 ```
 
-Apply it without restarting the Herdr server:
-
-```bash
-herdr config check
-herdr server reload-config
-```
+You can also add the layout manually and apply it with `herdr config check` and
+`herdr server reload-config`.
 
 ## Commands
 
@@ -74,6 +82,7 @@ herdr server reload-config
 | `/herdr-label <task>` | Set and hold a manual agent-task title |
 | `/herdr-label-auto` | Resume agent-managed task titles |
 | `/herdr-label-clear` | Clear the agent-task title and pause updates |
+| `/herdr-label-setup` | Confirm and safely install the styled three-row Herdr layout |
 
 ## How titles are chosen
 

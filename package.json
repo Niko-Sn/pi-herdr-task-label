@@ -1,6 +1,6 @@
 {
   "name": "pi-herdr-task-label",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Automatically label Pi sessions in Herdr from the current user task.",
   "type": "module",
   "main": "./index.ts",

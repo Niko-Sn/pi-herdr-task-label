@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { reportLabels } from "./src/herdr.ts";
+import { defaultHerdrConfigPath, installHerdrLayout } from "./src/setup.ts";
 import {
   MAX_LABEL_LENGTH,
   labelFromPrompt,
@@ -99,6 +100,39 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       save({ ...state, automatic: true });
       ctx.ui.notify("Agent-managed Herdr task titles enabled.", "info");
+    },
+  });
+
+  pi.registerCommand("herdr-label-setup", {
+    description: "Safely configure the three styled Pi rows in Herdr",
+    handler: async (_args, ctx) => {
+      const configPath = defaultHerdrConfigPath();
+      const confirmed = await ctx.ui.confirm(
+        "Configure Herdr agent rows?",
+        `Update only the Pi agent-row layout in ${configPath}? A timestamped backup will be created before any existing config is replaced.`,
+      );
+      if (!confirmed) {
+        ctx.ui.notify("Herdr setup canceled; no files changed.", "info");
+        return;
+      }
+
+      try {
+        const result = await installHerdrLayout(configPath);
+        if (!result.changed) {
+          ctx.ui.notify("Herdr Pi agent-row layout is already configured.", "info");
+          return;
+        }
+        const backup = result.backupPath ? ` Backup: ${result.backupPath}.` : "";
+        const reload = result.reloadWarning
+          ? " Config saved, but server reload failed; run `herdr server reload-config`."
+          : " Server config reloaded.";
+        ctx.ui.notify(
+          `Herdr Pi rows configured.${backup}${reload} Press Ctrl+B, then Shift+R in Herdr to reload the client UI.`,
+          result.reloadWarning ? "warning" : "info",
+        );
+      } catch (error) {
+        ctx.ui.notify(`Herdr setup failed: ${(error as Error).message}`, "error");
+      }
     },
   });
 
