@@ -57,7 +57,7 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
         ctx.ui.notify("Usage: /herdr-label <task>", "warning");
         return;
       }
-      const normalized = labelFromPrompt(label) ?? label.slice(0, 64);
+      const normalized = labelFromPrompt(label) ?? label.slice(0, 42);
       save({ label: normalized, automatic: false });
       ctx.ui.notify(`Herdr label: ${normalized}`, "info");
     },

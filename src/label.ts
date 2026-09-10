@@ -1,4 +1,6 @@
-export const MAX_LABEL_LENGTH = 64;
+// Fits a dedicated description row in the configured 46-column Herdr sidebar
+// after the panel's padding and status rail.
+export const MAX_LABEL_LENGTH = 42;
 
 const NON_TASK_FOLLOW_UP = /^(?:y(?:es|ep)?|no|n(?:ope)?|ok(?:ay)?|sure|do it|go ahead|continue|proceed|thanks?|thank you)[.!?]*$/i;
 
@@ -25,6 +27,6 @@ export function labelFromPrompt(prompt: string): string | null {
   if (label.length <= MAX_LABEL_LENGTH) return label;
   const candidate = label.slice(0, MAX_LABEL_LENGTH - 1);
   const boundary = candidate.lastIndexOf(" ");
-  const clipped = boundary >= 36 ? candidate.slice(0, boundary) : candidate;
+  const clipped = boundary >= 24 ? candidate.slice(0, boundary) : candidate;
   return `${clipped.trimEnd()}…`;
 }

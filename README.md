@@ -75,7 +75,8 @@ herdr server reload-config
 ## How labels are chosen
 
 Prompts are collapsed to one line, conversational prefixes such as “can you”
-and “let’s” are removed, and labels are capped at 64 characters. Common
+and “let’s” are removed, and labels are capped at 42 characters to fit a
+46-column Herdr sidebar. Common
 acknowledgement-only follow-ups do not replace the previous label.
 
 This is intentionally deterministic. It does not make an additional AI request,
