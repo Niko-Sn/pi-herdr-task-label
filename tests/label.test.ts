@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_LABEL_LENGTH,
+  HERDR_MAX_LABEL_LENGTH,
   MAX_LABEL_LENGTH,
+  MIN_LABEL_LENGTH,
   labelFromPrompt,
   lastPromptFromPrompt,
   normalizeAgentTitle,
+  resolveMaxLabelLength,
 } from "../src/label.ts";
+
+test("resolves configured label lengths within Herdr bounds", () => {
+  assert.equal(resolveMaxLabelLength("10"), MIN_LABEL_LENGTH);
+  assert.equal(resolveMaxLabelLength(" 50 "), 50);
+  assert.equal(resolveMaxLabelLength("80"), HERDR_MAX_LABEL_LENGTH);
+});
+
+test("uses the default for invalid configured lengths", () => {
+  for (const value of [undefined, "", "9", "81", "12.5", "invalid"]) {
+    assert.equal(resolveMaxLabelLength(value), DEFAULT_LABEL_LENGTH);
+  }
+});
 
 test("preserves the latest prompt, including short follow-ups", () => {
   assert.equal(lastPromptFromPrompt("  do   it.  "), "do it.");

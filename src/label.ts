@@ -1,6 +1,20 @@
-// Fits a dedicated description row in the configured 46-column Herdr sidebar
-// after the panel's padding and status rail.
-export const MAX_LABEL_LENGTH = 42;
+export const LABEL_LENGTH_ENV = "PI_HERDR_TASK_LABEL_MAX_LENGTH";
+export const DEFAULT_LABEL_LENGTH = 42;
+export const MIN_LABEL_LENGTH = 10;
+export const HERDR_MAX_LABEL_LENGTH = 80;
+
+export function resolveMaxLabelLength(value: string | undefined): number {
+  const normalized = value?.trim() ?? "";
+  if (!/^\d+$/.test(normalized)) return DEFAULT_LABEL_LENGTH;
+  const length = Number(normalized);
+  return length >= MIN_LABEL_LENGTH && length <= HERDR_MAX_LABEL_LENGTH
+    ? length
+    : DEFAULT_LABEL_LENGTH;
+}
+
+// Defaults to the configured 46-column sidebar while respecting Herdr's
+// metadata-value limit.
+export const MAX_LABEL_LENGTH = resolveMaxLabelLength(process.env[LABEL_LENGTH_ENV]);
 
 const NON_TASK_FOLLOW_UP = /^(?:y(?:es|ep)?|no|n(?:ope)?|ok(?:ay)?|sure|do it|go ahead|continue|proceed|thanks?|thank you)[.!?]*$/i;
 
@@ -17,7 +31,8 @@ function clipLabel(label: string): string {
   if (label.length <= MAX_LABEL_LENGTH) return label;
   const candidate = label.slice(0, MAX_LABEL_LENGTH - 1);
   const boundary = candidate.lastIndexOf(" ");
-  const clipped = boundary >= 24 ? candidate.slice(0, boundary) : candidate;
+  const minimumUsefulBoundary = Math.floor(MAX_LABEL_LENGTH * 0.57);
+  const clipped = boundary >= minimumUsefulBoundary ? candidate.slice(0, boundary) : candidate;
   return `${clipped.trimEnd()}…`;
 }
 

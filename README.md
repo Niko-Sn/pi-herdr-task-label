@@ -49,9 +49,20 @@ pi = [
 ]
 ```
 
-Both text values are limited to 42 characters. The latest prompt updates on every
-user turn. Pi sets a coherent, action-oriented task title of 3–7 words when work
-begins or the objective materially changes.
+The latest prompt updates on every user turn. Pi sets a coherent, action-oriented
+task title of 3–7 words when work begins or the objective materially changes.
+
+## Label length
+
+Both text rows default to 42 characters. Set the limit before starting Pi:
+
+```bash
+export PI_HERDR_TASK_LABEL_MAX_LENGTH=50
+```
+
+Valid values are integers from 10 through Herdr's maximum of 80. Missing or
+invalid values use 42. The configured limit controls prompt clipping, manual
+titles, agent-title validation, and agent guidance. Restart Pi after changing it.
 
 ## Configure Herdr
 

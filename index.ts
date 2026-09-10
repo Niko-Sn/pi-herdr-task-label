@@ -53,14 +53,14 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
       "Set a concise, coherent title describing this Pi session's current task in the Herdr agent sidebar.",
     promptSnippet: "Set the concise task title displayed for this Pi session in Herdr",
     promptGuidelines: [
-      "Call set_herdr_title near the beginning of every substantive user task and again only when the objective materially changes. Use a coherent action-oriented title of 3-7 words, no status words or directory names, and at most 42 characters.",
+      `Call set_herdr_title near the beginning of every substantive user task and again only when the objective materially changes. Use a coherent action-oriented title of 3-7 words, no status words or directory names, and at most ${MAX_LABEL_LENGTH} characters.`,
     ],
     parameters: Type.Object(
       {
         title: Type.String({
           minLength: 3,
           maxLength: MAX_LABEL_LENGTH,
-          description: "A coherent 3-7 word task title, at most 42 characters",
+          description: `A coherent 3-7 word task title, at most ${MAX_LABEL_LENGTH} characters`,
         }),
       },
       { additionalProperties: false },
