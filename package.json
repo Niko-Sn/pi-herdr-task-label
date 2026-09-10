@@ -31,9 +31,11 @@
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "typebox": "^1.0.13"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.85.1",
@@ -49,7 +51,7 @@
   "scripts": {
     "test": "node --experimental-transform-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test"
-  },
-  "private": true
+    "check": "npm run typecheck && npm test",
+    "prepublishOnly": "npm run check"
+  }
 }
