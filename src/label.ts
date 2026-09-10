@@ -13,12 +13,30 @@ export function normalizeAgentTitle(title: string): string {
   return normalized;
 }
 
-/** Turn a user prompt into a stable, one-line Herdr sidebar label. */
-export function labelFromPrompt(prompt: string): string | null {
-  let label = prompt
+function clipLabel(label: string): string {
+  if (label.length <= MAX_LABEL_LENGTH) return label;
+  const candidate = label.slice(0, MAX_LABEL_LENGTH - 1);
+  const boundary = candidate.lastIndexOf(" ");
+  const clipped = boundary >= 24 ? candidate.slice(0, boundary) : candidate;
+  return `${clipped.trimEnd()}…`;
+}
+
+function cleanPrompt(prompt: string): string {
+  return prompt
     .replace(/\[(?:image|attachment)[^\]]*\]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Preserve the latest prompt as a readable, sidebar-sized line. */
+export function lastPromptFromPrompt(prompt: string): string | null {
+  const label = cleanPrompt(prompt);
+  return label ? clipLabel(label) : null;
+}
+
+/** Turn a user prompt into a stable fallback task label. */
+export function labelFromPrompt(prompt: string): string | null {
+  let label = cleanPrompt(prompt);
 
   if (!label || NON_TASK_FOLLOW_UP.test(label)) return null;
 
@@ -33,9 +51,5 @@ export function labelFromPrompt(prompt: string): string | null {
   if (!label) return null;
   label = label[0]!.toUpperCase() + label.slice(1);
 
-  if (label.length <= MAX_LABEL_LENGTH) return label;
-  const candidate = label.slice(0, MAX_LABEL_LENGTH - 1);
-  const boundary = candidate.lastIndexOf(" ");
-  const clipped = boundary >= 24 ? candidate.slice(0, boundary) : candidate;
-  return `${clipped.trimEnd()}…`;
+  return clipLabel(label);
 }

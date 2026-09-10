@@ -3,8 +3,14 @@ import test from "node:test";
 import {
   MAX_LABEL_LENGTH,
   labelFromPrompt,
+  lastPromptFromPrompt,
   normalizeAgentTitle,
 } from "../src/label.ts";
+
+test("preserves the latest prompt, including short follow-ups", () => {
+  assert.equal(lastPromptFromPrompt("  do   it.  "), "do it.");
+  assert.equal(lastPromptFromPrompt("[Image attached]"), null);
+});
 
 test("normalizes a normal task prompt", () => {
   assert.equal(

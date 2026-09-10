@@ -1,7 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { reportLabel } from "./src/herdr.ts";
-import { MAX_LABEL_LENGTH, labelFromPrompt, normalizeAgentTitle } from "./src/label.ts";
+import { reportLabels } from "./src/herdr.ts";
+import {
+  MAX_LABEL_LENGTH,
+  labelFromPrompt,
+  lastPromptFromPrompt,
+  normalizeAgentTitle,
+} from "./src/label.ts";
 import {
   DEFAULT_STATE,
   ENTRY_TYPE,
@@ -13,7 +18,7 @@ import {
 export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   let state: LabelState = { ...DEFAULT_STATE };
 
-  const publish = () => void reportLabel(state.label);
+  const publish = () => void reportLabels(state.lastPrompt, state.agentTask);
 
   const save = (next: LabelState) => {
     state = next;
@@ -23,12 +28,8 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
 
   const restore = (ctx: ExtensionContext) => {
     state = restoreState(ctx);
-    if (!state.label) {
-      const sessionName = pi.getSessionName();
-      const promptLabel = labelFromPrompt(latestUserPrompt(ctx) ?? "");
-      const label = sessionName || promptLabel;
-      if (label) state = { label, automatic: true };
-    }
+    const lastPrompt = lastPromptFromPrompt(latestUserPrompt(ctx) ?? "");
+    if (lastPrompt !== state.lastPrompt) state = { ...state, lastPrompt };
     publish();
   };
 
@@ -36,18 +37,12 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   pi.on("session_tree", async (_event, ctx) => restore(ctx));
 
   pi.on("before_agent_start", (event) => {
-    if (!state.automatic) return;
-    const label = labelFromPrompt(event.prompt);
-    if (label && label !== state.label) save({ label, automatic: true });
-  });
-
-  pi.on("session_info_changed", (event) => {
-    if (!state.automatic || !event.name || event.name === state.label) return;
-    save({ label: event.name, automatic: true });
+    const lastPrompt = lastPromptFromPrompt(event.prompt);
+    if (lastPrompt !== state.lastPrompt) save({ ...state, lastPrompt });
   });
 
   pi.on("session_shutdown", async (event) => {
-    if (event.reason === "quit") await reportLabel(null);
+    if (event.reason === "quit") await reportLabels(null, null);
   });
 
   pi.registerTool({
@@ -72,12 +67,12 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
     async execute(_toolCallId, params) {
       if (!state.automatic) {
         return {
-          content: [{ type: "text", text: "Manual Herdr label is active; title unchanged." }],
-          details: { applied: false, label: state.label },
+          content: [{ type: "text", text: "Manual Herdr task is active; title unchanged." }],
+          details: { applied: false, label: state.agentTask },
         };
       }
       const title = normalizeAgentTitle(params.title);
-      save({ label: title, automatic: true });
+      save({ ...state, agentTask: title });
       return {
         content: [{ type: "text", text: `Herdr title set: ${title}` }],
         details: { applied: true, label: title },
@@ -86,32 +81,32 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("herdr-label", {
-    description: "Set a persistent manual task label for this Herdr agent row",
+    description: "Set a persistent manual agent task for this Herdr row",
     handler: async (args, ctx) => {
       const label = args.trim();
       if (!label) {
         ctx.ui.notify("Usage: /herdr-label <task>", "warning");
         return;
       }
-      const normalized = labelFromPrompt(label) ?? label.slice(0, 42);
-      save({ label: normalized, automatic: false });
-      ctx.ui.notify(`Herdr label: ${normalized}`, "info");
+      const normalized = labelFromPrompt(label) ?? label.slice(0, MAX_LABEL_LENGTH);
+      save({ ...state, agentTask: normalized, automatic: false });
+      ctx.ui.notify(`Herdr task: ${normalized}`, "info");
     },
   });
 
   pi.registerCommand("herdr-label-auto", {
-    description: "Resume automatic Herdr task labels from user prompts",
+    description: "Resume agent-managed Herdr task titles",
     handler: async (_args, ctx) => {
       save({ ...state, automatic: true });
-      ctx.ui.notify("Automatic Herdr task labels enabled.", "info");
+      ctx.ui.notify("Agent-managed Herdr task titles enabled.", "info");
     },
   });
 
   pi.registerCommand("herdr-label-clear", {
-    description: "Clear and pause the Herdr task label",
+    description: "Clear and pause the agent-managed Herdr task title",
     handler: async (_args, ctx) => {
-      save({ label: null, automatic: false });
-      ctx.ui.notify("Herdr task label cleared.", "info");
+      save({ ...state, agentTask: null, automatic: false });
+      ctx.ui.notify("Herdr agent task cleared.", "info");
     },
   });
 }

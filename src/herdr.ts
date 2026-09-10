@@ -1,7 +1,9 @@
 import net from "node:net";
 
 export const SOURCE = "pi-herdr-task-label";
-export const TOKEN = "session_task";
+export const LAST_PROMPT_TOKEN = "last_prompt";
+export const AGENT_TASK_TOKEN = "agent_task";
+const LEGACY_TOKEN = "session_task";
 let reportSeq = Date.now() * 1000;
 
 function nextSeq(): number {
@@ -15,14 +17,22 @@ export function isHerdrEnvironment(): boolean {
     !!process.env.HERDR_PANE_ID;
 }
 
-export function metadataRequest(label: string | null, seq = nextSeq()): object {
+export function metadataRequest(
+  lastPrompt: string | null,
+  agentTask: string | null,
+  seq = nextSeq(),
+): object {
   return {
     id: `${SOURCE}:${seq}`,
     method: "pane.report_metadata",
     params: {
       pane_id: process.env.HERDR_PANE_ID,
       source: SOURCE,
-      tokens: { [TOKEN]: label },
+      tokens: {
+        [LAST_PROMPT_TOKEN]: lastPrompt,
+        [AGENT_TASK_TOKEN]: agentTask,
+        [LEGACY_TOKEN]: null,
+      },
       seq,
     },
   };
@@ -58,7 +68,10 @@ async function send(request: unknown): Promise<void> {
   await sendAttempt(request, 1500);
 }
 
-export function reportLabel(label: string | null): Promise<void> {
+export function reportLabels(
+  lastPrompt: string | null,
+  agentTask: string | null,
+): Promise<void> {
   if (!isHerdrEnvironment()) return Promise.resolve();
-  return send(metadataRequest(label));
+  return send(metadataRequest(lastPrompt, agentTask));
 }
