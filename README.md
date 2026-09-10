@@ -4,33 +4,6 @@ A Pi extension that shows the latest user prompt and an agent-written task title
 on separate rows in Herdr. It does not require a task tree and coexists with
 Herdr's managed Pi integration and `pi-todo-herdr`.
 
-## Agent layout
-
-The setup command configures three Pi rows:
-
-1. State icon, `pi`, and workspace
-2. Latest user prompt in darker gray
-3. Agent-written task title in lighter gray
-
-```toml
-[ui.sidebar.agents.rows_by_agent]
-pi = [
-  ["state_icon", "agent", "workspace"],
-  [{ token = "$last_prompt", fg = "#928374" }],
-  [{ token = "$agent_task", fg = "#bdae93" }],
-]
-```
-
-Both text values are limited to 42 characters. The latest prompt updates on every
-user turn. Pi sets a coherent, action-oriented task title of 3–7 words when work
-begins or the objective materially changes.
-
-## Requirements
-
-- Pi 0.85 or newer
-- Node.js 20 or newer
-- Herdr with its Pi integration installed
-
 ## Install
 
 From npm:
@@ -52,6 +25,33 @@ pi install /absolute/path/to/pi-herdr-task-label
 ```
 
 Run `/reload` in every existing Pi session after installing or updating.
+
+## Requirements
+
+- Pi 0.85 or newer
+- Node.js 20 or newer
+- Herdr with its Pi integration installed
+
+## Agent layout
+
+The setup command configures three Pi rows:
+
+1. State icon, `pi`, and workspace
+2. Latest user prompt in darker gray
+3. Agent-written task title in lighter gray
+
+```toml
+[ui.sidebar.agents.rows_by_agent]
+pi = [
+  ["state_icon", "agent", "workspace"],
+  [{ token = "$last_prompt", fg = "#928374" }],
+  [{ token = "$agent_task", fg = "#bdae93" }],
+]
+```
+
+Both text values are limited to 42 characters. The latest prompt updates on every
+user turn. Pi sets a coherent, action-oriented task title of 3–7 words when work
+begins or the objective materially changes.
 
 ## Configure Herdr
 
