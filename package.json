@@ -1,0 +1,53 @@
+{
+  "name": "pi-herdr-task-label",
+  "version": "0.1.0",
+  "description": "Automatically label Pi sessions in Herdr from the current user task.",
+  "type": "module",
+  "main": "./index.ts",
+  "files": [
+    "index.ts",
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "herdr",
+    "task-label",
+    "sidebar"
+  ],
+  "author": "Niko-Sn",
+  "license": "MIT",
+  "homepage": "https://github.com/Niko-Sn/pi-herdr-task-label#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Niko-Sn/pi-herdr-task-label.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Niko-Sn/pi-herdr-task-label/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.2"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --experimental-transform-types --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "private": true
+}
