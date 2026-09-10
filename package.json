@@ -1,6 +1,6 @@
 {
   "name": "pi-herdr-task-label",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Automatically label Pi sessions in Herdr from the current user task.",
   "type": "module",
   "main": "./index.ts",
@@ -32,11 +32,13 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.85.1",
     "@types/node": "^24.0.0",
+    "typebox": "^1.0.13",
     "typescript": "^6.0.2"
   },
   "pi": {

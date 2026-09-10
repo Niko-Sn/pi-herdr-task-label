@@ -1,17 +1,19 @@
 # pi-herdr-task-label
 
-A Pi extension that labels each Pi agent row in Herdr with the task from its
-latest meaningful user prompt.
+A Pi extension that asks the active agent to write a concise, coherent task
+title for its row in Herdr.
 
 It exists for sessions that are too small or informal for task-tree tracking.
-Unlike `pi-todo-herdr`, it does not require Pi to create explicit tasks: every
-substantive prompt can become the session label. Short acknowledgements such as
-“yes”, “do it”, and “continue” retain the previous useful label.
+Unlike `pi-todo-herdr`, it does not require an explicit task tree. A deterministic
+prompt-derived label appears immediately, then Pi replaces it with an intentional
+3–7 word title when it begins work.
 
 ## Features
 
 - Reports a display-only `$session_task` token to the current Herdr pane
-- Derives concise labels locally without an extra model request
+- Provides `set_herdr_title`, an agent-facing tool with a strict 42-character limit
+- Instructs Pi to write a coherent 3–7 word title when the objective changes
+- Uses an immediate prompt-derived fallback if the agent does not call the tool
 - Persists labels across Pi reloads, resumes, forks, and tree navigation
 - Restores an initial label from the Pi session name or latest user prompt
 - Supports manual labels and returning to automatic mode
@@ -48,7 +50,8 @@ Add `$session_task` to the Pi agent rows in `~/.config/herdr/config.toml`:
 
 ```toml
 [ui]
-agent_panel_sort = "priority"
+sidebar_width = 46
+agent_panel_sort = "spaces"
 
 [ui.sidebar.agents.rows_by_agent]
 pi = [
@@ -72,16 +75,18 @@ herdr server reload-config
 | `/herdr-label-auto` | Resume labels derived from prompts |
 | `/herdr-label-clear` | Clear the label and pause automatic updates |
 
-## How labels are chosen
+## How titles are chosen
 
-Prompts are collapsed to one line, conversational prefixes such as “can you”
-and “let’s” are removed, and labels are capped at 42 characters to fit a
-46-column Herdr sidebar. Common
-acknowledgement-only follow-ups do not replace the previous label.
+At the beginning of substantive work, Pi is instructed to call
+`set_herdr_title` with a coherent, action-oriented title of 3–7 words. The tool
+schema rejects titles longer than 42 characters, so Pi must shorten an oversized
+title before it can be displayed.
 
-This is intentionally deterministic. It does not make an additional AI request,
-so labels are immediate, private, and free, but they are concise prompt excerpts
-rather than generated summaries.
+A deterministic fallback is still derived immediately from the user prompt.
+Conversational prefixes are removed, long text is clipped at a word boundary,
+and acknowledgement-only follow-ups retain the previous label. The agent-written
+title replaces that fallback when the tool is called. No additional model request
+is made.
 
 ## Development
 

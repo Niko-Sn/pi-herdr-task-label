@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { reportLabel } from "./src/herdr.ts";
-import { labelFromPrompt } from "./src/label.ts";
+import { MAX_LABEL_LENGTH, labelFromPrompt, normalizeAgentTitle } from "./src/label.ts";
 import {
   DEFAULT_STATE,
   ENTRY_TYPE,
@@ -47,6 +48,41 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async (event) => {
     if (event.reason === "quit") await reportLabel(null);
+  });
+
+  pi.registerTool({
+    name: "set_herdr_title",
+    label: "Set Herdr Title",
+    description:
+      "Set a concise, coherent title describing this Pi session's current task in the Herdr agent sidebar.",
+    promptSnippet: "Set the concise task title displayed for this Pi session in Herdr",
+    promptGuidelines: [
+      "Call set_herdr_title near the beginning of every substantive user task and again only when the objective materially changes. Use a coherent action-oriented title of 3-7 words, no status words or directory names, and at most 42 characters.",
+    ],
+    parameters: Type.Object(
+      {
+        title: Type.String({
+          minLength: 3,
+          maxLength: MAX_LABEL_LENGTH,
+          description: "A coherent 3-7 word task title, at most 42 characters",
+        }),
+      },
+      { additionalProperties: false },
+    ),
+    async execute(_toolCallId, params) {
+      if (!state.automatic) {
+        return {
+          content: [{ type: "text", text: "Manual Herdr label is active; title unchanged." }],
+          details: { applied: false, label: state.label },
+        };
+      }
+      const title = normalizeAgentTitle(params.title);
+      save({ label: title, automatic: true });
+      return {
+        content: [{ type: "text", text: `Herdr title set: ${title}` }],
+        details: { applied: true, label: title },
+      };
+    },
   });
 
   pi.registerCommand("herdr-label", {

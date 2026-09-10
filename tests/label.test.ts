@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MAX_LABEL_LENGTH, labelFromPrompt } from "../src/label.ts";
+import {
+  MAX_LABEL_LENGTH,
+  labelFromPrompt,
+  normalizeAgentTitle,
+} from "../src/label.ts";
 
 test("normalizes a normal task prompt", () => {
   assert.equal(
@@ -25,6 +29,15 @@ test("removes attachment markers and collapses whitespace", () => {
     labelFromPrompt("[Image attached]\nPlease fix   the sidebar layout."),
     "Fix the sidebar layout",
   );
+});
+
+test("accepts and normalizes a coherent agent title", () => {
+  assert.equal(normalizeAgentTitle("  Fix   Herdr sidebar labels. "), "Fix Herdr sidebar labels");
+});
+
+test("rejects incoherent-size agent titles", () => {
+  assert.throws(() => normalizeAgentTitle("x"), /at least 3/);
+  assert.throws(() => normalizeAgentTitle("x".repeat(MAX_LABEL_LENGTH + 1)), /42 characters/);
 });
 
 test("clips labels at a readable word boundary", () => {
