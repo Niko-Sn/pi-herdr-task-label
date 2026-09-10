@@ -1,35 +1,39 @@
 # pi-herdr-task-label
 
-A Pi extension that asks the active agent to write a concise, coherent task
-title for its row in Herdr.
+A private Pi extension that shows the latest user prompt and an agent-written task
+title on separate rows in Herdr. It does not require a task tree and coexists with
+Herdr's managed Pi integration and `pi-todo-herdr`.
 
-It exists for sessions that are too small or informal for task-tree tracking.
-Unlike `pi-todo-herdr`, it does not require an explicit task tree. It displays
-the latest user prompt and the agent's intentional 3–7 word task title on
-separate rows.
+## Agent layout
 
-## Features
+The setup command configures three Pi rows:
 
-- Reports display-only `$last_prompt` and `$agent_task` tokens to Herdr
-- Provides `set_herdr_title`, an agent-facing tool with a strict 42-character limit
-- Instructs Pi to write a coherent 3–7 word title when the objective changes
-- Persists both lines across Pi reloads, resumes, forks, and tree navigation
-- Supports manual agent-task titles and returning to automatic mode
-- Migrates state from the previous single-token format
-- Coexists with Herdr's official managed Pi integration and `pi-todo-herdr`
-- Clears its tokens when Pi quits
+1. State icon, `pi`, and workspace
+2. Latest user prompt in darker gray
+3. Agent-written task title in lighter gray
 
-No prompt or label is sent outside the local Pi and Herdr processes.
+```toml
+[ui.sidebar.agents.rows_by_agent]
+pi = [
+  ["state_icon", "agent", "workspace"],
+  [{ token = "$last_prompt", fg = "#928374" }],
+  [{ token = "$agent_task", fg = "#bdae93" }],
+]
+```
+
+Both text values are limited to 42 characters. The latest prompt updates on every
+user turn. Pi sets a coherent, action-oriented task title of 3–7 words when work
+begins or the objective materially changes.
 
 ## Requirements
 
 - Pi 0.85 or newer
 - Node.js 20 or newer
-- Herdr with the Pi integration installed
+- Herdr with its Pi integration installed
 
 ## Install
 
-While this repository is private, install it using GitHub SSH authentication:
+While the repository is private:
 
 ```bash
 pi install git:git@github.com:Niko-Sn/pi-herdr-task-label.git
@@ -41,59 +45,105 @@ For local development:
 pi install /absolute/path/to/pi-herdr-task-label
 ```
 
-Run `/reload` in an existing Pi session after installation.
+Run `/reload` in every existing Pi session after installing or updating.
 
 ## Configure Herdr
 
-Run the interactive setup command:
+Run:
 
 ```text
 /herdr-label-setup
 ```
 
-Pi shows the target configuration path and requires explicit confirmation before
-writing. Setup changes only the `rows_by_agent.pi` assignment, preserves unrelated
-TOML text, creates a timestamped backup, writes atomically, validates with
-`herdr config check`, restores the original on failure, and reloads the server.
-Press `Ctrl+B`, then `Shift+R` in Herdr afterward to reload the client UI.
+The command displays the target config path and asks for confirmation before it
+reads or changes the file. Nothing runs automatically during installation,
+updates, startup, or `/reload`.
 
-The command installs this layout:
+After confirmation, setup:
+
+- Changes only `[ui.sidebar.agents.rows_by_agent].pi`
+- Preserves unrelated TOML text, comments, and formatting
+- Validates a temporary candidate with `herdr config check`
+- Detects concurrent config edits
+- Creates `config.toml.bak-<timestamp>` before replacing an existing config
+- Writes atomically and restores the original if final validation fails
+- Reloads the Herdr server
+
+Press `Ctrl+B`, then `Shift+R` in Herdr to reload the client UI. Existing Pi
+sessions also need `/reload` before they can report both metadata values.
+
+The extension honors `HERDR_CONFIG_PATH`; otherwise it uses
+`~/.config/herdr/config.toml`.
+
+### Optional sidebar settings
+
+The setup command deliberately leaves general UI preferences untouched. The
+current recommended settings are:
 
 ```toml
 [ui]
 sidebar_width = 46
+sidebar_min_width = 36
+sidebar_max_width = 56
 agent_panel_sort = "spaces"
-
-[ui.sidebar.agents.rows_by_agent]
-pi = [
-  ["state_icon", "agent", "workspace"],
-  ["$last_prompt"],
-  ["$agent_task"],
-]
 ```
-
-You can also add the layout manually and apply it with `herdr config check` and
-`herdr server reload-config`.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `/herdr-label <task>` | Set and hold a manual agent-task title |
+| `/herdr-label-setup` | Confirm and install the styled three-row Pi layout |
+| `/herdr-label <task>` | Set and hold a manual task title |
 | `/herdr-label-auto` | Resume agent-managed task titles |
-| `/herdr-label-clear` | Clear the agent-task title and pause updates |
-| `/herdr-label-setup` | Confirm and safely install the styled three-row Herdr layout |
+| `/herdr-label-clear` | Clear the task title and pause agent updates |
 
-## How titles are chosen
+A manual title prevents `set_herdr_title` from replacing it until
+`/herdr-label-auto` is run.
 
-At the beginning of substantive work, Pi is instructed to call
-`set_herdr_title` with a coherent, action-oriented title of 3–7 words. The tool
-schema rejects titles longer than 42 characters, so Pi must shorten an oversized
-title before it can be displayed.
+## Customize
 
-The latest user prompt is independently collapsed to one line and clipped at a
-readable word boundary. It updates even for short follow-ups such as “do it,”
-while the agent-task row retains the coherent objective title.
+Edit the `pi` rows in `config.toml`. Token entries support `fg`, `bold`, and
+`dim`, for example:
+
+```toml
+[{ token = "$agent_task", fg = "#cccccc", bold = true }]
+```
+
+Rows may be reordered or removed, and built-in tokens such as `machine`, `tab`,
+and `state_text` may be added. Apply manual changes with:
+
+```bash
+herdr config check
+herdr server reload-config
+```
+
+Then press `Ctrl+B`, followed by `Shift+R` in Herdr. Package updates do not alter
+the layout. Running `/herdr-label-setup` again resets only the `pi` assignment to
+the extension default after confirmation and backup.
+
+## Undo setup
+
+If no relevant config edits were made afterward, restore the backup reported by
+the setup command:
+
+```bash
+cp ~/.config/herdr/config.toml.bak-<timestamp> ~/.config/herdr/config.toml
+herdr config check
+herdr server reload-config
+```
+
+Then reload the Herdr client with `Ctrl+B`, followed by `Shift+R`. If the config
+was edited after setup, remove or replace only the
+`[ui.sidebar.agents.rows_by_agent].pi` assignment instead of restoring the whole
+backup. If setup created a new config, no backup exists; remove that table or
+assignment manually.
+
+## State and privacy
+
+The extension reports display-only `$last_prompt` and `$agent_task` metadata to
+the current Herdr pane, persists state across reloads, resumes, forks, and tree
+navigation, and clears both tokens when Pi quits. Prompts and titles remain within
+the local Pi and Herdr processes.
 
 ## Development
 
@@ -102,15 +152,7 @@ npm install
 npm run check
 ```
 
-## Publishing later
-
-The package is marked `private` in `package.json` while under development.
-Before publishing to npm, remove that field, review the package name, and run:
-
-```bash
-npm pack --dry-run
-npm publish
-```
+The package remains marked `private` in `package.json`.
 
 ## License
 
