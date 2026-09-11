@@ -45,6 +45,14 @@ test("restores split prompt and task state", () => {
   assert.deepEqual(restoreState(ctx), data);
 });
 
+test("does not resurrect old text when the latest prompt is image-only", () => {
+  const ctx = contextWithBranch([
+    { type: "message", message: { role: "user", content: "Older text" } },
+    { type: "message", message: { role: "user", content: [{ type: "image", data: "..." }] } },
+  ]);
+  assert.equal(latestUserPrompt(ctx), null);
+});
+
 test("supports string messages and ignores non-user entries", () => {
   const ctx = contextWithBranch([
     { type: "message", message: { role: "user", content: "String task" } },

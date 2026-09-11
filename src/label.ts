@@ -18,22 +18,65 @@ export const MAX_LABEL_LENGTH = resolveMaxLabelLength(process.env[LABEL_LENGTH_E
 
 const NON_TASK_FOLLOW_UP = /^(?:y(?:es|ep)?|no|n(?:ope)?|ok(?:ay)?|sure|do it|go ahead|continue|proceed|thanks?|thank you)[.!?]*$/i;
 
+function characters(value: string): string[] {
+  return Array.from(value);
+}
+
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function graphemes(value: string): string[] {
+  return Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment);
+}
+
 export function normalizeAgentTitle(title: string): string {
   const normalized = title.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
-  if (normalized.length < 3) throw new Error("title must contain at least 3 characters");
-  if (normalized.length > MAX_LABEL_LENGTH) {
+  const length = characters(normalized).length;
+  if (length < 3) throw new Error("title must contain at least 3 characters");
+  if (length > MAX_LABEL_LENGTH) {
     throw new Error(`title must be ${MAX_LABEL_LENGTH} characters or fewer`);
   }
   return normalized;
 }
 
 function clipLabel(label: string): string {
-  if (label.length <= MAX_LABEL_LENGTH) return label;
-  const candidate = label.slice(0, MAX_LABEL_LENGTH - 1);
-  const boundary = candidate.lastIndexOf(" ");
+  const points = characters(label);
+  if (points.length <= MAX_LABEL_LENGTH) return label;
+
+  const budget = MAX_LABEL_LENGTH - 1;
+  const candidate: string[] = [];
+  let used = 0;
+  for (const grapheme of graphemes(label)) {
+    const width = characters(grapheme).length;
+    if (used + width > budget) break;
+    candidate.push(grapheme);
+    used += width;
+  }
+
   const minimumUsefulBoundary = Math.floor(MAX_LABEL_LENGTH * 0.57);
-  const clipped = boundary >= minimumUsefulBoundary ? candidate.slice(0, boundary) : candidate;
-  return `${clipped.trimEnd()}…`;
+  let boundary = -1;
+  let prefixLength = used;
+  for (let index = candidate.length - 1; index >= 0; index -= 1) {
+    prefixLength -= characters(candidate[index]!).length;
+    if (prefixLength < minimumUsefulBoundary) break;
+    if (/^\s+$/u.test(candidate[index]!)) {
+      boundary = index;
+      break;
+    }
+  }
+  const clipped = boundary >= 0 ? candidate.slice(0, boundary) : candidate;
+  return `${clipped.join("").trimEnd()}…`;
+}
+
+export function normalizeStoredTitle(title: string | null): string | null {
+  if (title === null) return null;
+  const normalized = title.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+  return normalized ? clipLabel(normalized) : null;
+}
+
+export function manualLabelFromInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (!/[\p{L}\p{N}]/u.test(trimmed)) return null;
+  return labelFromPrompt(trimmed) ?? normalizeStoredTitle(trimmed);
 }
 
 function cleanPrompt(prompt: string): string {
