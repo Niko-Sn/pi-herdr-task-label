@@ -102,6 +102,27 @@ test("updates and extends semantic dotted and inline rows_by_agent keys", () => 
   const nestedPatched = patchHerdrConfig(nestedOther);
   assert.ok(nestedPatched.includes("rows_by_agent.pi = ["));
   assert.equal(nestedPatched.includes("ui.sidebar.agents.ui.sidebar"), false);
+
+  const deeperKey = '[ui.sidebar.agents]\nrows_by_agent.claude.x = 1\n';
+  const deeperPatched = patchHerdrConfig(deeperKey);
+  assert.ok(deeperPatched.includes("rows_by_agent.pi = ["));
+  assert.ok(deeperPatched.includes("rows_by_agent.claude.x = 1"));
+  assert.equal(patchHerdrConfig(deeperPatched), deeperPatched);
+});
+
+test("rejects array-of-tables and deeper subtable layouts without corrupting them", () => {
+  const rowsTable = "ui.sidebar.agents.rows_by_agent";
+  const unsupported = [
+    `[[${rowsTable}]]\npi = [["x"]]\n`,
+    `[${rowsTable}.extra]\npi = [["x"]]\n`,
+    `[${rowsTable}.extra]\nother = 1\n`,
+  ];
+  for (const original of unsupported) {
+    assert.throws(
+      () => patchHerdrConfig(original),
+      /array of tables or has deeper subtables/,
+    );
+  }
 });
 
 test("backs up, atomically installs, validates, preserves mode, and reloads", async () => {

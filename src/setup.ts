@@ -135,6 +135,11 @@ export function patchHerdrConfig(config: string): string {
     assignment.path.length > ROWS_PATH.length &&
     ROWS_PATH.every((part, index) => assignment.path[index] === part));
   if (related?.node.range) {
+    if (related.context.length > ROWS_PATH.length) {
+      throw new Error(
+        `Could not patch ${ROWS_TABLE}: it is defined as an array of tables or has deeper subtables; add the Pi row manually`,
+      );
+    }
     const newline = config.indexOf("\n", related.node.range[1]);
     const insertion = newline < 0 ? config.length : newline + 1;
     const relativeTarget = targetPath.slice(related.context.length).join(".");
