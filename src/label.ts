@@ -22,9 +22,10 @@ function characters(value: string): string[] {
   return Array.from(value);
 }
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 function graphemes(value: string): string[] {
-  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  return Array.from(segmenter.segment(value), (part) => part.segment);
+  return Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment);
 }
 
 export function normalizeAgentTitle(title: string): string {

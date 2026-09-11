@@ -101,15 +101,21 @@ function samePath(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((part, index) => part === right[index]);
 }
 
+function lineEnding(config: string): "\r\n" | "\n" {
+  return config.includes("\r\n") ? "\r\n" : "\n";
+}
+
 /** Replace only rows_by_agent.pi while preserving all unrelated TOML text. */
 export function patchHerdrConfig(config: string): string {
+  const eol = lineEnding(config);
+  const rowsValue = PI_ROWS_VALUE.replace(/\n/g, eol);
   const nodes = parseNodes(config);
   const assignments = semanticAssignments(nodes);
   const targetPath = [...ROWS_PATH, "pi"];
   const existing = assignments.find((assignment) => samePath(assignment.path, targetPath));
   if (existing?.node.value?.range) {
     const [start, end] = existing.node.value.range;
-    const value = existing.inline ? PI_ROWS_VALUE_INLINE : PI_ROWS_VALUE;
+    const value = existing.inline ? PI_ROWS_VALUE_INLINE : rowsValue;
     return `${config.slice(0, start)}${value}${config.slice(end)}`;
   }
 
@@ -127,8 +133,8 @@ export function patchHerdrConfig(config: string): string {
     const insertion = table.range?.[1];
     if (insertion === undefined) throw new Error("Could not locate the rows_by_agent table");
     const prefix = config.slice(0, insertion);
-    const separator = prefix.endsWith("\n") ? "" : "\n";
-    return `${prefix}${separator}${PI_ROWS_ASSIGNMENT}${config.slice(insertion)}`;
+    const separator = prefix.endsWith("\n") ? "" : eol;
+    return `${prefix}${separator}pi = ${rowsValue}${config.slice(insertion)}`;
   }
 
   const related = assignments.find((assignment) =>
@@ -144,11 +150,11 @@ export function patchHerdrConfig(config: string): string {
     const insertion = newline < 0 ? config.length : newline + 1;
     const relativeTarget = targetPath.slice(related.context.length).join(".");
     const prefix = insertion === 0 || config[insertion - 1] === "\n" ? "" : "\n";
-    return `${config.slice(0, insertion)}${prefix}${relativeTarget} = ${PI_ROWS_VALUE}\n${config.slice(insertion)}`;
+    return `${config.slice(0, insertion)}${prefix}${relativeTarget} = ${rowsValue}${eol}${config.slice(insertion)}`;
   }
 
-  const separator = !config ? "" : config.endsWith("\n") ? "" : "\n";
-  return `${config}${separator}${config ? "\n" : ""}[${ROWS_TABLE}]\n${PI_ROWS_ASSIGNMENT}\n`;
+  const separator = !config ? "" : config.endsWith("\n") ? "" : eol;
+  return `${config}${separator}${config ? eol : ""}[${ROWS_TABLE}]${eol}pi = ${rowsValue}${eol}`;
 }
 
 export function defaultHerdrConfigPath(): string {
@@ -225,7 +231,8 @@ async function readSnapshot(configPath: string): Promise<Snapshot | null> {
 function sameSnapshot(left: Snapshot | null, right: Snapshot | null): boolean {
   return left === null || right === null
     ? left === right
-    : left.dev === right.dev && left.ino === right.ino && left.content === right.content;
+    : left.dev === right.dev && left.ino === right.ino &&
+      left.mode === right.mode && left.content === right.content;
 }
 
 async function writeExclusive(filePath: string, content: string, mode: number): Promise<void> {
@@ -292,12 +299,24 @@ async function acquireSetupLock(lockPath: string): Promise<SetupLock> {
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const owner = Number.parseInt((await readFile(lockPath, "utf8").catch(() => "")).trim(), 10);
-      if (Number.isInteger(owner) && owner > 0 && !processIsRunning(owner)) {
+      let owner: number | null = null;
+      for (let read = 0; read < 5; read += 1) {
+        const parsed = Number.parseInt((await readFile(lockPath, "utf8").catch(() => "")).trim(), 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          owner = parsed;
+          break;
+        }
+        // The lock exists but has no pid yet: its creator may still be
+        // writing it. Retry briefly before giving up.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (owner !== null && !processIsRunning(owner)) {
         await unlink(lockPath).catch(() => undefined);
         continue;
       }
-      throw new Error(`Another Herdr setup is already running: ${lockPath}`);
+      throw new Error(owner === null
+        ? `Herdr setup lock is unreadable or was just created: ${lockPath}`
+        : `Another Herdr setup is already running: ${lockPath}`);
     }
   }
   throw new Error(`Could not clear stale Herdr setup lock: ${lockPath}`);
@@ -374,7 +393,7 @@ export async function installHerdrLayout(
           await unlink(displacedPath);
           keepDisplaced = false;
         }
-        throw new Error("Herdr config was created concurrently; no setup changes were applied");
+        throw new Error("Herdr config was created or replaced concurrently; no setup changes were applied");
       }
       if (original) keepDisplaced = !(await restoreMoved(displacedPath, configPath));
       throw error;

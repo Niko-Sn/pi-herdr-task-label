@@ -99,7 +99,7 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
       }
       const normalized = manualLabelFromInput(label);
       if (!normalized) {
-        ctx.ui.notify("Herdr task must contain text, not only punctuation.", "warning");
+        ctx.ui.notify("Herdr task must contain letters or numbers, not only punctuation or emoji.", "warning");
         return;
       }
       save({ ...state, agentTask: normalized, automatic: false });

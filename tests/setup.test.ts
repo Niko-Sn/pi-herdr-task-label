@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { link as fsLink, lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link as fsLink, lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -122,6 +122,95 @@ test("rejects array-of-tables and deeper subtable layouts without corrupting the
       () => patchHerdrConfig(original),
       /array of tables or has deeper subtables/,
     );
+  }
+});
+
+test("preserves CRLF line endings in inserted and replaced text", () => {
+  const rowsTable = "ui.sidebar.agents.rows_by_agent";
+  const crlfAssignment = PI_ROWS_ASSIGNMENT.replace(/\n/g, "\r\n");
+  const noBareLf = (patched: string) => assert.equal(/(?<!\r)\n/.test(patched), false);
+
+  // The table-without-pi branch in line-ending-neutral form:
+  const lfAppended = `a = 1\n[${rowsTable}]\nother = 2\n`;
+  const lfPatched = patchHerdrConfig(lfAppended);
+  assert.ok(lfPatched.includes("other = 2\npi = [\n"));
+  assert.equal(patchHerdrConfig(lfPatched), lfPatched);
+
+  const replaced = `[${rowsTable}]\r\npi = [["x"]]\r\n`;
+  const replacedPatched = patchHerdrConfig(replaced);
+  assert.ok(replacedPatched.includes(crlfAssignment));
+  noBareLf(replacedPatched);
+  assert.equal(patchHerdrConfig(replacedPatched), replacedPatched);
+
+  const appended = `a = 1\r\n[${rowsTable}]\r\nother = 2\r\n`;
+  const appendedPatched = patchHerdrConfig(appended);
+  assert.ok(appendedPatched.includes(`\r\npi = [\r`));
+  assert.ok(appendedPatched.includes("other = 2\r\n"));
+  noBareLf(appendedPatched);
+  assert.equal(patchHerdrConfig(appendedPatched), appendedPatched);
+
+  const fromScratch = "a = 1\r\n";
+  const scratchPatched = patchHerdrConfig(fromScratch);
+  assert.ok(scratchPatched.includes(`[${rowsTable}]\r\n${crlfAssignment}\r\n`));
+  noBareLf(scratchPatched);
+  assert.equal(patchHerdrConfig(scratchPatched), scratchPatched);
+});
+
+test("reports a concurrent replacement without losing the backup", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "pi-herdr-eexist-"));
+  const configPath = path.join(directory, "config.toml");
+  const original = "onboarding = false\n";
+  await writeFile(configPath, original);
+  try {
+    await assert.rejects(
+      installHerdrLayout(configPath, {
+        validate: NOOP_VALIDATE,
+        reload: NOOP_RELOAD,
+        installLink: async () => {
+          throw Object.assign(new Error("link failed"), { code: "EEXIST" });
+        },
+      }),
+      /created or replaced concurrently/,
+    );
+    const backup = (await readdir(directory)).find((name) => name.includes(".bak-"));
+    assert.ok(backup);
+    assert.equal(await readFile(path.join(directory, backup!), "utf8"), original);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("aborts if the config mode changes concurrently", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "pi-herdr-mode-"));
+  const configPath = path.join(directory, "config.toml");
+  await writeFile(configPath, "onboarding = false\n");
+  await chmod(configPath, 0o644);
+  try {
+    await assert.rejects(
+      installHerdrLayout(configPath, {
+        validate: NOOP_VALIDATE,
+        reload: NOOP_RELOAD,
+        beforeCommit: async () => { await chmod(configPath, 0o600); },
+      }),
+      /changed during setup/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects an unreadable setup lock without claiming another setup is running", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "pi-herdr-lock-junk-"));
+  const configPath = path.join(directory, "config.toml");
+  await writeFile(configPath, "onboarding = false\n");
+  await writeFile(`${configPath}.pi-herdr-setup.lock`, "not-a-pid\n");
+  try {
+    await assert.rejects(
+      installHerdrLayout(configPath, { validate: NOOP_VALIDATE, reload: NOOP_RELOAD }),
+      /unreadable/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
