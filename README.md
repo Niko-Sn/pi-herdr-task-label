@@ -30,7 +30,7 @@ Run `/reload` in every existing Pi session after installing or updating.
 
 - Pi 0.85 or newer
 - Node.js 20 or newer
-- Herdr with its Pi integration installed
+- [Herdr](https://herdr.dev/) with its [Pi integration](https://herdr.dev/docs/integrations/) installed
 
 ## Agent layout
 
