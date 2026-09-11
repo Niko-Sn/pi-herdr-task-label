@@ -1,6 +1,6 @@
 {
   "name": "pi-herdr-task-label",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Show the latest Pi prompt and agent-written task title in a configurable Herdr sidebar.",
   "type": "module",
   "main": "./index.ts",

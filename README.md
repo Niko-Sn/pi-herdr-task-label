@@ -15,7 +15,7 @@ pi install npm:pi-herdr-task-label
 From GitHub:
 
 ```bash
-pi install git:github.com/Niko-Sn/pi-herdr-task-label@v0.4.0
+pi install git:github.com/Niko-Sn/pi-herdr-task-label@v0.4.1
 ```
 
 For local development:
