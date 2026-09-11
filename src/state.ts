@@ -43,7 +43,7 @@ export function latestUserPrompt(ctx: ExtensionContext): string | null {
     };
     if (entry?.type !== "message" || entry.message?.role !== "user") continue;
     const content = entry.message.content;
-    if (typeof content === "string" && content.trim()) return content;
+    if (typeof content === "string") return content.trim() ? content : null;
     if (Array.isArray(content)) {
       const text = content
         .filter((part): part is { type: "text"; text: string } =>
@@ -53,8 +53,9 @@ export function latestUserPrompt(ctx: ExtensionContext): string | null {
         .map((part) => part.text)
         .join(" ")
         .trim();
-      if (text) return text;
+      return text || null;
     }
+    return null;
   }
   return null;
 }

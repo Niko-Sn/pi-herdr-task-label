@@ -1,12 +1,17 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { reportLabels } from "./src/herdr.ts";
-import { defaultHerdrConfigPath, installHerdrLayout } from "./src/setup.ts";
+import {
+  defaultHerdrConfigPath,
+  installHerdrLayout,
+  resolveHerdrConfigPath,
+} from "./src/setup.ts";
 import {
   MAX_LABEL_LENGTH,
-  labelFromPrompt,
   lastPromptFromPrompt,
+  manualLabelFromInput,
   normalizeAgentTitle,
+  normalizeStoredTitle,
 } from "./src/label.ts";
 import {
   DEFAULT_STATE,
@@ -30,7 +35,10 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   const restore = (ctx: ExtensionContext) => {
     state = restoreState(ctx);
     const lastPrompt = lastPromptFromPrompt(latestUserPrompt(ctx) ?? "");
-    if (lastPrompt !== state.lastPrompt) state = { ...state, lastPrompt };
+    const agentTask = normalizeStoredTitle(state.agentTask);
+    if (lastPrompt !== state.lastPrompt || agentTask !== state.agentTask) {
+      state = { ...state, lastPrompt, agentTask };
+    }
     publish();
   };
 
@@ -89,7 +97,11 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
         ctx.ui.notify("Usage: /herdr-label <task>", "warning");
         return;
       }
-      const normalized = labelFromPrompt(label) ?? label.slice(0, MAX_LABEL_LENGTH);
+      const normalized = manualLabelFromInput(label);
+      if (!normalized) {
+        ctx.ui.notify("Herdr task must contain text, not only punctuation.", "warning");
+        return;
+      }
       save({ ...state, agentTask: normalized, automatic: false });
       ctx.ui.notify(`Herdr task: ${normalized}`, "info");
     },
@@ -106,7 +118,14 @@ export default function piHerdrTaskLabel(pi: ExtensionAPI): void {
   pi.registerCommand("herdr-label-setup", {
     description: "Safely configure the three styled Pi rows in Herdr",
     handler: async (_args, ctx) => {
-      const configPath = defaultHerdrConfigPath();
+      const requestedPath = defaultHerdrConfigPath();
+      let configPath: string;
+      try {
+        configPath = await resolveHerdrConfigPath(requestedPath);
+      } catch (error) {
+        ctx.ui.notify(`Herdr setup failed: ${(error as Error).message}`, "error");
+        return;
+      }
       const confirmed = await ctx.ui.confirm(
         "Configure Herdr agent rows?",
         `Update only the Pi agent-row layout in ${configPath}? A timestamped backup will be created before any existing config is replaced.`,

@@ -1,29 +1,35 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { constants } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import {
   access,
   chmod,
-  copyFile,
+  link,
   lstat,
   mkdir,
+  open,
   readFile,
   realpath,
   rename,
   unlink,
-  writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
+import { parseTOML } from "toml-eslint-parser";
 
 const execFile = promisify(execFileCallback);
-const ROWS_TABLE = "ui.sidebar.agents.rows_by_agent";
-
-export const PI_ROWS_ASSIGNMENT = `pi = [
+const ROWS_PATH = ["ui", "sidebar", "agents", "rows_by_agent"];
+const ROWS_TABLE = ROWS_PATH.join(".");
+const PI_ROWS_VALUE = `[
   ["state_icon", "agent", "workspace"],
   [{ token = "$last_prompt", fg = "#928374" }],
   [{ token = "$agent_task", fg = "#bdae93" }],
 ]`;
+const PI_ROWS_VALUE_INLINE = '[["state_icon", "agent", "workspace"], [{ token = "$last_prompt", fg = "#928374" }], [{ token = "$agent_task", fg = "#bdae93" }]]';
+
+export const PI_ROWS_ASSIGNMENT = `pi = ${PI_ROWS_VALUE}`;
 
 export type SetupResult = {
   changed: boolean;
@@ -36,84 +42,116 @@ type SetupDependencies = {
   now?: () => Date;
   validate?: (configPath: string) => Promise<void>;
   reload?: () => Promise<void>;
+  beforeCommit?: () => Promise<void>;
+  installLink?: (source: string, target: string) => Promise<void>;
+  restoreMoved?: (source: string, target: string) => Promise<boolean>;
 };
 
-function tableRanges(config: string): Array<{ name: string; start: number; bodyStart: number; end: number }> {
-  const matches = [...config.matchAll(/^\s*\[([^\]\n]+)\]\s*(?:#.*)?$/gm)];
-  return matches.map((match, index) => ({
-    name: match[1]!.trim(),
-    start: match.index!,
-    bodyStart: match.index! + match[0].length,
-    end: matches[index + 1]?.index ?? config.length,
-  }));
+type Snapshot = {
+  content: string;
+  mode: number;
+  dev: bigint;
+  ino: bigint;
+};
+
+type TomlNode = {
+  type?: string;
+  body?: TomlNode[];
+  resolvedKey?: string[];
+  key?: { keys?: Array<{ name?: string; value?: unknown }> };
+  value?: { type?: string; body?: TomlNode[]; range?: [number, number] };
+  range?: [number, number];
+};
+
+type SemanticAssignment = {
+  node: TomlNode;
+  path: string[];
+  context: string[];
+  inline: boolean;
+};
+
+function keyParts(node: TomlNode): string[] {
+  return node.key?.keys?.map((part) => String(part.name ?? part.value ?? "")) ?? [];
 }
 
-function assignmentEnd(config: string, arrayStart: number, limit: number): number {
-  let depth = 0;
-  let quote: "\"" | "'" | null = null;
-  let escaped = false;
-  let comment = false;
-  for (let index = arrayStart; index < limit; index += 1) {
-    const char = config[index]!;
-    if (comment) {
-      if (char === "\n") comment = false;
-      continue;
+function parseNodes(config: string): TomlNode[] {
+  const program = parseTOML(config) as unknown as TomlNode;
+  return program.body?.flatMap((top) => top.body ?? []) ?? [];
+}
+
+function semanticAssignments(nodes: TomlNode[]): SemanticAssignment[] {
+  const assignments: SemanticAssignment[] = [];
+  const visit = (node: TomlNode, context: string[], inline: boolean) => {
+    if (node.type === "TOMLTable") {
+      for (const child of node.body ?? []) visit(child, node.resolvedKey ?? [], false);
+      return;
     }
-    if (quote) {
-      if (quote === "\"" && escaped) {
-        escaped = false;
-      } else if (quote === "\"" && char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
+    if (node.type !== "TOMLKeyValue") return;
+    const resolved = [...context, ...keyParts(node)];
+    assignments.push({ node, path: resolved, context, inline });
+    if (node.value?.type === "TOMLInlineTable") {
+      for (const child of node.value.body ?? []) visit(child, resolved, true);
     }
-    if (char === "#") {
-      comment = true;
-    } else if (char === "\"" || char === "'") {
-      quote = char;
-    } else if (char === "[") {
-      depth += 1;
-    } else if (char === "]") {
-      depth -= 1;
-      if (depth === 0) return index + 1;
-    }
-  }
-  throw new Error("Could not parse the existing rows_by_agent.pi array");
+  };
+  for (const node of nodes) visit(node, [], false);
+  return assignments;
+}
+
+function samePath(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((part, index) => part === right[index]);
 }
 
 /** Replace only rows_by_agent.pi while preserving all unrelated TOML text. */
 export function patchHerdrConfig(config: string): string {
-  const table = tableRanges(config).find((candidate) => candidate.name === ROWS_TABLE);
-  if (!table) {
-    const separator = !config ? "" : config.endsWith("\n") ? "\n" : "\n\n";
-    return `${config}${separator}[${ROWS_TABLE}]\n${PI_ROWS_ASSIGNMENT}\n`;
+  const nodes = parseNodes(config);
+  const assignments = semanticAssignments(nodes);
+  const targetPath = [...ROWS_PATH, "pi"];
+  const existing = assignments.find((assignment) => samePath(assignment.path, targetPath));
+  if (existing?.node.value?.range) {
+    const [start, end] = existing.node.value.range;
+    const value = existing.inline ? PI_ROWS_VALUE_INLINE : PI_ROWS_VALUE;
+    return `${config.slice(0, start)}${value}${config.slice(end)}`;
   }
 
-  const body = config.slice(table.bodyStart, table.end);
-  const assignment = /^([ \t]*)pi[ \t]*=/m.exec(body);
-  if (!assignment) {
-    const insertion = table.end;
+  const inlineRows = assignments.find((assignment) =>
+    samePath(assignment.path, ROWS_PATH) && assignment.node.value?.type === "TOMLInlineTable");
+  if (inlineRows?.node.value?.range) {
+    const insertion = inlineRows.node.value.range[0] + 1;
+    const separator = inlineRows.node.value.body?.length ? ", " : "";
+    return `${config.slice(0, insertion)}pi = ${PI_ROWS_VALUE_INLINE}${separator}${config.slice(insertion)}`;
+  }
+
+  const table = nodes.find((node) =>
+    node.type === "TOMLTable" && samePath(node.resolvedKey ?? [], ROWS_PATH));
+  if (table) {
+    const insertion = table.range?.[1];
+    if (insertion === undefined) throw new Error("Could not locate the rows_by_agent table");
     const prefix = config.slice(0, insertion);
     const separator = prefix.endsWith("\n") ? "" : "\n";
-    return `${prefix}${separator}${PI_ROWS_ASSIGNMENT}\n${config.slice(insertion)}`;
+    return `${prefix}${separator}${PI_ROWS_ASSIGNMENT}${config.slice(insertion)}`;
   }
 
-  const start = table.bodyStart + assignment.index;
-  const equals = start + assignment[0].lastIndexOf("=");
-  const arrayStart = config.indexOf("[", equals + 1);
-  if (arrayStart < 0 || arrayStart >= table.end) {
-    throw new Error("Could not find the existing rows_by_agent.pi array");
+  const related = assignments.find((assignment) =>
+    assignment.path.length > ROWS_PATH.length &&
+    ROWS_PATH.every((part, index) => assignment.path[index] === part));
+  if (related?.node.range) {
+    const newline = config.indexOf("\n", related.node.range[1]);
+    const insertion = newline < 0 ? config.length : newline + 1;
+    const relativeTarget = targetPath.slice(related.context.length).join(".");
+    const prefix = insertion === 0 || config[insertion - 1] === "\n" ? "" : "\n";
+    return `${config.slice(0, insertion)}${prefix}${relativeTarget} = ${PI_ROWS_VALUE}\n${config.slice(insertion)}`;
   }
-  const end = assignmentEnd(config, arrayStart, table.end);
-  const indent = assignment[1] ?? "";
-  const replacement = PI_ROWS_ASSIGNMENT.split("\n").map((line) => `${indent}${line}`).join("\n");
-  return `${config.slice(0, start)}${replacement}${config.slice(end)}`;
+
+  const separator = !config ? "" : config.endsWith("\n") ? "" : "\n";
+  return `${config}${separator}${config ? "\n" : ""}[${ROWS_TABLE}]\n${PI_ROWS_ASSIGNMENT}\n`;
 }
 
 export function defaultHerdrConfigPath(): string {
-  return path.resolve(process.env.HERDR_CONFIG_PATH || path.join(homedir(), ".config/herdr/config.toml"));
+  if (process.env.HERDR_CONFIG_PATH) return path.resolve(process.env.HERDR_CONFIG_PATH);
+  if (process.platform === "win32") {
+    return path.resolve(process.env.APPDATA || path.join(homedir(), "AppData/Roaming"), "herdr/config.toml");
+  }
+  return path.resolve(process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config"), "herdr/config.toml");
 }
 
 async function runHerdr(args: string[], configPath?: string): Promise<void> {
@@ -123,10 +161,18 @@ async function runHerdr(args: string[], configPath?: string): Promise<void> {
   });
 }
 
-async function resolveConfigPath(requestedPath: string): Promise<string> {
+export async function resolveHerdrConfigPath(requestedPath: string): Promise<string> {
   try {
     const stats = await lstat(requestedPath);
-    return stats.isSymbolicLink() ? await realpath(requestedPath) : requestedPath;
+    if (!stats.isSymbolicLink()) return requestedPath;
+    try {
+      return await realpath(requestedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(`Herdr config is a dangling symlink: ${requestedPath}`);
+      }
+      throw error;
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return requestedPath;
     throw error;
@@ -142,78 +188,210 @@ async function uniqueBackupPath(configPath: string, stamp: string): Promise<stri
     const candidate = `${configPath}.bak-${stamp}${suffix ? `-${suffix}` : ""}`;
     try {
       await access(candidate, constants.F_OK);
-    } catch {
-      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return candidate;
+      throw error;
     }
   }
   throw new Error("Could not allocate a unique Herdr config backup path");
 }
 
-async function atomicRestore(configPath: string, content: string, mode: number): Promise<void> {
-  const restorePath = `${configPath}.pi-herdr-restore-${process.pid}`;
-  await writeFile(restorePath, content, { encoding: "utf8", flag: "wx", mode });
-  await rename(restorePath, configPath);
+async function readSnapshot(configPath: string): Promise<Snapshot | null> {
+  try {
+    const handle = await open(configPath, "r");
+    try {
+      const stats = await handle.stat({ bigint: true });
+      if (!stats.isFile()) throw new Error(`Herdr config is not a regular file: ${configPath}`);
+      return {
+        content: await handle.readFile("utf8"),
+        mode: Number(stats.mode & 0o777n),
+        dev: stats.dev,
+        ino: stats.ino,
+      };
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function sameSnapshot(left: Snapshot | null, right: Snapshot | null): boolean {
+  return left === null || right === null
+    ? left === right
+    : left.dev === right.dev && left.ino === right.ino && left.content === right.content;
+}
+
+async function writeExclusive(filePath: string, content: string, mode: number): Promise<void> {
+  const handle = await open(filePath, "wx", mode);
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.chmod(mode);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  try {
+    const handle = await open(directory, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if (!(["EINVAL", "ENOTSUP", "EISDIR"] as Array<string | undefined>).includes(
+      (error as NodeJS.ErrnoException).code,
+    )) throw error;
+  }
+}
+
+async function restoreMovedFile(displacedPath: string, configPath: string): Promise<boolean> {
+  try {
+    await link(displacedPath, configPath);
+    await unlink(displacedPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+}
+
+type SetupLock = { handle: FileHandle; dev: bigint; ino: bigint };
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+async function acquireSetupLock(lockPath: string): Promise<SetupLock> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600);
+      try {
+        await handle.writeFile(`${process.pid}\n`, "utf8");
+        await handle.sync();
+        const stats = await handle.stat({ bigint: true });
+        return { handle, dev: stats.dev, ino: stats.ino };
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        await unlink(lockPath).catch(() => undefined);
+        throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const owner = Number.parseInt((await readFile(lockPath, "utf8").catch(() => "")).trim(), 10);
+      if (Number.isInteger(owner) && owner > 0 && !processIsRunning(owner)) {
+        await unlink(lockPath).catch(() => undefined);
+        continue;
+      }
+      throw new Error(`Another Herdr setup is already running: ${lockPath}`);
+    }
+  }
+  throw new Error(`Could not clear stale Herdr setup lock: ${lockPath}`);
+}
+
+async function releaseSetupLock(lockPath: string, lock: SetupLock): Promise<void> {
+  await lock.handle.close();
+  try {
+    const current = await lstat(lockPath, { bigint: true });
+    if (current.dev === lock.dev && current.ino === lock.ino) await unlink(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }
 
 export async function installHerdrLayout(
   requestedPath = defaultHerdrConfigPath(),
   dependencies: SetupDependencies = {},
 ): Promise<SetupResult> {
-  const configPath = await resolveConfigPath(requestedPath);
+  const configPath = await resolveHerdrConfigPath(requestedPath);
   const validate = dependencies.validate ?? ((candidate) => runHerdr(["config", "check"], candidate));
   const reload = dependencies.reload ?? (() => runHerdr(["server", "reload-config"]));
   const now = dependencies.now ?? (() => new Date());
+  const installLink = dependencies.installLink ?? link;
+  const restoreMoved = dependencies.restoreMoved ?? restoreMovedFile;
+  const directory = path.dirname(configPath);
+  await mkdir(directory, { recursive: true });
 
-  let original = "";
-  let mode = 0o600;
-  let exists = true;
+  const lockPath = `${configPath}.pi-herdr-setup.lock`;
+  const lock = await acquireSetupLock(lockPath);
+
+  const transaction = randomUUID();
+  const temporaryPath = `${configPath}.pi-herdr-setup-${transaction}`;
+  const displacedPath = `${configPath}.pi-herdr-original-${transaction}`;
+  let keepDisplaced = false;
   try {
-    original = await readFile(configPath, "utf8");
-    mode = (await lstat(configPath)).mode & 0o777;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    exists = false;
-  }
+    const original = await readSnapshot(configPath);
+    const patched = patchHerdrConfig(original?.content ?? "");
+    if (patched === original?.content) {
+      return { changed: false, configPath, backupPath: null, reloadWarning: null };
+    }
 
-  const patched = patchHerdrConfig(original);
-  if (patched === original) {
-    return { changed: false, configPath, backupPath: null, reloadWarning: null };
-  }
-
-  const temporaryPath = `${configPath}.pi-herdr-setup-${process.pid}`;
-  let backupPath: string | null = null;
-  try {
-    await mkdir(path.dirname(configPath), { recursive: true });
-    await writeFile(temporaryPath, patched, { encoding: "utf8", flag: "wx", mode });
+    const mode = original?.mode ?? 0o600;
+    await writeExclusive(temporaryPath, patched, mode);
     await validate(temporaryPath);
+    await dependencies.beforeCommit?.();
 
-    if (exists && await readFile(configPath, "utf8") !== original) {
+    if (!sameSnapshot(original, await readSnapshot(configPath))) {
       throw new Error("Herdr config changed during setup; no changes were applied");
     }
 
-    if (exists) {
+    let backupPath: string | null = null;
+    if (original) {
+      await rename(configPath, displacedPath);
+      keepDisplaced = true;
+
+      const moved = await readSnapshot(displacedPath);
+      if (!sameSnapshot(original, moved)) {
+        keepDisplaced = !(await restoreMoved(displacedPath, configPath));
+        const location = keepDisplaced ? ` Concurrent data preserved at ${displacedPath}.` : "";
+        throw new Error(`Herdr config changed during setup; no setup changes were applied.${location}`);
+      }
+
       backupPath = await uniqueBackupPath(configPath, timestamp(now()));
-      await copyFile(configPath, backupPath, constants.COPYFILE_EXCL);
-      await chmod(backupPath, mode);
+      await link(displacedPath, backupPath);
+      await syncDirectory(directory);
     }
 
-    await rename(temporaryPath, configPath);
     try {
-      await validate(configPath);
+      await installLink(temporaryPath, configPath);
     } catch (error) {
-      if (exists) await atomicRestore(configPath, original, mode);
-      else await unlink(configPath);
-      throw new Error(`Herdr config validation failed; original restored: ${(error as Error).message}`);
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        if (original) {
+          await unlink(displacedPath);
+          keepDisplaced = false;
+        }
+        throw new Error("Herdr config was created concurrently; no setup changes were applied");
+      }
+      if (original) keepDisplaced = !(await restoreMoved(displacedPath, configPath));
+      throw error;
     }
+
+    await unlink(temporaryPath);
+    if (original) {
+      await unlink(displacedPath);
+      keepDisplaced = false;
+    }
+    await syncDirectory(directory);
+
+    let reloadWarning: string | null = null;
+    try {
+      await reload();
+    } catch (error) {
+      reloadWarning = (error as Error).message;
+    }
+    return { changed: true, configPath, backupPath, reloadWarning };
   } finally {
     await unlink(temporaryPath).catch(() => undefined);
+    if (!keepDisplaced) await unlink(displacedPath).catch(() => undefined);
+    await releaseSetupLock(lockPath, lock);
   }
-
-  let reloadWarning: string | null = null;
-  try {
-    await reload();
-  } catch (error) {
-    reloadWarning = (error as Error).message;
-  }
-  return { changed: true, configPath, backupPath, reloadWarning };
 }

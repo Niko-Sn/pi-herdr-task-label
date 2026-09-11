@@ -15,7 +15,7 @@ pi install npm:pi-herdr-task-label
 From GitHub:
 
 ```bash
-pi install git:github.com/Niko-Sn/pi-herdr-task-label
+pi install git:github.com/Niko-Sn/pi-herdr-task-label@v0.4.0
 ```
 
 For local development:
@@ -29,7 +29,7 @@ Run `/reload` in every existing Pi session after installing or updating.
 ## Requirements
 
 - Pi 0.85 or newer
-- Node.js 20 or newer
+- Node.js 22.19 or newer
 - [Herdr](https://herdr.dev/) with its [Pi integration](https://herdr.dev/docs/integrations/) installed
 
 ## Agent layout
@@ -72,25 +72,27 @@ Run:
 /herdr-label-setup
 ```
 
-The command displays the target config path and asks for confirmation before it
-reads or changes the file. Nothing runs automatically during installation,
+The command resolves and displays the target config path, then asks for
+confirmation before changing it. Nothing runs automatically during installation,
 updates, startup, or `/reload`.
 
 After confirmation, setup:
 
 - Changes only `[ui.sidebar.agents.rows_by_agent].pi`
-- Preserves unrelated TOML text, comments, and formatting
-- Validates a temporary candidate with `herdr config check`
-- Detects concurrent config edits
+- Uses TOML-aware source ranges and preserves unrelated text and comments
+- Validates a staged candidate with `herdr config check`
+- Rejects dangling symlinks and follows valid symlinks to their target
+- Detects concurrent edits and never clobbers a concurrently created file
 - Creates `config.toml.bak-<timestamp>` before replacing an existing config
-- Writes atomically and restores the original if final validation fails
+- Preserves file permissions and installs the validated candidate without clobbering
 - Reloads the Herdr server
 
 Press `Ctrl+B`, then `Shift+R` in Herdr to reload the client UI. Existing Pi
 sessions also need `/reload` before they can report both metadata values.
 
-The extension honors `HERDR_CONFIG_PATH`; otherwise it uses
-`~/.config/herdr/config.toml`.
+The extension honors `HERDR_CONFIG_PATH`, then the platform config location:
+`$XDG_CONFIG_HOME/herdr/config.toml`, `~/.config/herdr/config.toml`, or
+`%APPDATA%\\herdr\\config.toml` on Windows.
 
 ### Optional sidebar settings
 

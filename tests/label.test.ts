@@ -7,7 +7,9 @@ import {
   MIN_LABEL_LENGTH,
   labelFromPrompt,
   lastPromptFromPrompt,
+  manualLabelFromInput,
   normalizeAgentTitle,
+  normalizeStoredTitle,
   resolveMaxLabelLength,
 } from "../src/label.ts";
 
@@ -67,6 +69,38 @@ test("clips labels at a readable word boundary", () => {
     "Implement a comprehensive and extremely detailed synchronization mechanism for every active Herdr agent pane",
   );
   assert.ok(result);
-  assert.ok(result.length <= MAX_LABEL_LENGTH);
+  assert.ok(Array.from(result).length <= MAX_LABEL_LENGTH);
   assert.ok(result.endsWith("…"));
+});
+
+test("clips Unicode without splitting surrogate pairs or grapheme clusters", () => {
+  const emoji = lastPromptFromPrompt("😀".repeat(MAX_LABEL_LENGTH + 5));
+  assert.ok(emoji);
+  assert.equal(Array.from(emoji).length, MAX_LABEL_LENGTH);
+  assert.equal(emoji.endsWith("…"), true);
+  assert.equal(/[\uD800-\uDFFF]/u.test(Array.from(emoji).at(-2) ?? ""), false);
+
+  const combined = lastPromptFromPrompt("e\u0301".repeat(MAX_LABEL_LENGTH));
+  assert.ok(combined);
+  assert.equal(combined.endsWith("e…"), false);
+  assert.equal(Array.from(combined).length <= MAX_LABEL_LENGTH, true);
+
+  const family = "👨‍👩‍👧‍👦";
+  const joined = lastPromptFromPrompt(`${"x".repeat(MAX_LABEL_LENGTH - 5)}${family}${family}`)!;
+  assert.equal(joined.includes("👨‍"), false);
+});
+
+test("rejects punctuation-only manual labels", () => {
+  for (const value of ["...!?", "---", "###", ",,,", "()"]){
+    assert.equal(manualLabelFromInput(value), null);
+  }
+  assert.equal(manualLabelFromInput(" Review setup "), "Review setup");
+});
+
+test("normalizes and clips restored titles to the active limit", () => {
+  assert.equal(normalizeStoredTitle("  Review   the setup. "), "Review the setup");
+  const result = normalizeStoredTitle("x".repeat(MAX_LABEL_LENGTH + 10));
+  assert.equal(Array.from(result ?? "").length, MAX_LABEL_LENGTH);
+  assert.equal(result?.endsWith("…"), true);
+  assert.equal(normalizeStoredTitle("  "), null);
 });
